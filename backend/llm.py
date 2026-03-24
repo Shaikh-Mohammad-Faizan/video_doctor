@@ -1,123 +1,33 @@
-import requests
 import json
 import os
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
 
-GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
-
-# ─────────────────────────────────────────────
-# MUSIC LIBRARY — offline fallback
-# ─────────────────────────────────────────────
-
-MUSIC_LIBRARY = {
-    "upbeat": {
-        "genre": "Lo-fi / Upbeat pop",
-        "bpm": "100–130 BPM",
-        "suggestion": "Add an upbeat lo-fi track to fill this dead moment",
-        "find_at": "YouTube Audio Library",
-        "search_query": "upbeat lo-fi no copyright 2025",
-    },
-    "calm": {
-        "genre": "Ambient / Soft instrumental",
-        "bpm": "60–80 BPM",
-        "suggestion": "Soft ambient music keeps viewers present without distraction",
-        "find_at": "Pixabay Music",
-        "search_query": "calm ambient no copyright",
-    },
-    "energetic": {
-        "genre": "EDM / Trap instrumental",
-        "bpm": "128–150 BPM",
-        "suggestion": "Drop an energetic beat here — matches the cut point perfectly",
-        "find_at": "YouTube Audio Library",
-        "search_query": "energetic no copyright 2025",
-    },
-    "dramatic": {
-        "genre": "Cinematic / Orchestral",
-        "bpm": "70–100 BPM",
-        "suggestion": "A cinematic build-up makes this moment feel important",
-        "find_at": "Pixabay Music",
-        "search_query": "cinematic build no copyright",
-    },
-    "emotional": {
-        "genre": "Soft piano / Acoustic",
-        "bpm": "60–75 BPM",
-        "suggestion": "Soft piano supports the emotional delivery here",
-        "find_at": "YouTube Audio Library",
-        "search_query": "soft piano emotional no copyright",
-    },
-}
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 
-def get_music_suggestion(mood: str) -> dict:
-    lib = MUSIC_LIBRARY.get(mood, MUSIC_LIBRARY["upbeat"])
+SYSTEM_PROMPT = """You are a professional short-form video editor.
+A creator uploaded a video and our system detected engagement dips using audio, visual, and language signals.
 
-    if YOUTUBE_API_KEY:
-        try:
-            resp = requests.get(
-                "https://www.googleapis.com/youtube/v3/search",
-                params={
-                    "q": lib["search_query"],
-                    "type": "video",
-                    "videoCategoryId": "10",
-                    "order": "viewCount",
-                    "maxResults": 3,
-                    "key": YOUTUBE_API_KEY,
-                },
-                timeout=5,
-            )
-            if resp.status_code == 200:
-                items = resp.json().get("items", [])
-                songs = []
-                for item in items:
-                    songs.append({
-                        "title":   item["snippet"]["title"][:60],
-                        "channel": item["snippet"]["channelTitle"],
-                        "url": f"https://youtube.com/watch?v={item['id']['videoId']}",
-                    })
-                if songs:
-                    return {
-                        "source":     "trending",
-                        "mood":       mood,
-                        "genre":      lib["genre"],
-                        "bpm":        lib["bpm"],
-                        "suggestion": lib["suggestion"],
-                        "songs":      songs,
-                    }
-        except Exception:
-            pass
+For each zone:
+1. Explain why attention likely dropped in a direct, editor-style tone.
+2. Keep the diagnosis useful, specific, and encouraging.
+3. Give:
+- quickFixes: 5 to 6 short actionable fixes specific to the cause
+- mediumFix: a stronger correction that may require a reshoot or rewrite
+- strategicFix: a repeatable lesson for future videos
 
-    return {
-        "source":     "library",
-        "mood":       mood,
-        "genre":      lib["genre"],
-        "bpm":        lib["bpm"],
-        "suggestion": lib["suggestion"],
-        "find_at":    lib["find_at"],
-        "search":     lib["search_query"],
-        "songs":      [],
-    }
+Important:
+- Make the fixes DIFFERENT depending on the primary cause.
+- If primaryCause is audio, focus on delivery, mic clarity, pacing, pauses, vocal emphasis.
+- If primaryCause is visual, focus on framing, cuts, B-roll, zooms, movement, captions, visual rhythm.
+- If primaryCause is nlp, focus on scripting, filler words, clarity, phrasing, hook strength, sentence tightening.
+- Avoid repeating the exact same fixes for every zone.
+- Keep each diagnosis to max 2 sentences.
+- Respond ONLY with valid JSON.
 
-
-# ─────────────────────────────────────────────
-# GEMINI API — RECOMMENDATION ENGINE
-# ─────────────────────────────────────────────
-
-SYSTEM_PROMPT = """You are a professional video editor with 10 years of experience 
-editing viral short-form content. A creator uploaded a video and our system detected 
-engagement drop zones with specific signal data.
-
-For each drop zone, explain the problem EXACTLY like you would tell a creator in a 
-real editing session — specific, direct, human, maximum 2 sentences.
-
-Then give three fixes:
-- quickFix: something they can do in under 5 minutes right now
-- mediumFix: something that requires a reshoot of that segment  
-- strategicFix: a structural change for their next video
-
-Respond ONLY with valid JSON. No markdown, no explanation outside the JSON.
 Format exactly:
 {
   "zones": [
@@ -125,7 +35,7 @@ Format exactly:
       "timestamp": "string",
       "diagnosis": "string",
       "primaryCause": "audio|visual|nlp",
-      "quickFix": "string",
+      "quickFixes": ["string", "string", "string", "string", "string"],
       "mediumFix": "string",
       "strategicFix": "string"
     }
@@ -134,42 +44,142 @@ Format exactly:
 }"""
 
 
+def generate_quick_fixes(primary_cause: str, start_sec: int, end_sec: int, severity: str = "mild"):
+    if primary_cause == "audio":
+        fixes = [
+            "Tighten long pauses to improve pacing",
+            "Increase vocal clarity with EQ and noise cleanup",
+            "Level volume so the voice stays consistent",
+            "Cut hesitation sounds and filler pauses",
+            "Add stronger emphasis on key words",
+            "Use light compression so delivery feels more present",
+        ]
+
+    elif primary_cause == "visual":
+        fixes = [
+            "Add zoom cuts or punch-ins every 2–3 seconds",
+            "Insert B-roll or supporting cutaways",
+            "Use captions or motion text to reinforce key points",
+            "Add faster jump cuts where the frame feels static",
+            "Introduce a framing change or subject movement",
+            "Overlay icons, highlights, or simple graphics",
+        ]
+
+    else:  # nlp
+        fixes = [
+            "Shorten the sentence so the point lands faster",
+            "Remove filler words and low-impact phrasing",
+            "Rewrite the line with clearer, sharper wording",
+            "Break the message into punchier shorter beats",
+            "Use a curiosity hook or stronger value statement",
+            "Replace vague phrasing with more direct language",
+        ]
+
+    # Opening-specific improvements
+    if start_sec <= 3:
+        opening_fix = "Strengthen the hook in the first second with a clearer payoff"
+        if opening_fix not in fixes:
+            fixes.insert(0, opening_fix)
+
+    # Ending-specific improvements
+    if end_sec >= 12:  # generic short-form-safe heuristic
+        ending_fix = "Trim dead space at the end or add a stronger closing line"
+        if ending_fix not in fixes and len(fixes) < 7:
+            fixes.append(ending_fix)
+
+    # Severity-aware tweak
+    if severity == "critical":
+        severity_fix = "Remove this segment entirely if it does not add strong value"
+        if severity_fix not in fixes:
+            fixes.insert(0, severity_fix)
+
+    return fixes[:6]
+
+
+def generate_medium_fix(primary_cause: str, start_sec: int):
+    if primary_cause == "audio":
+        if start_sec <= 3:
+            return "Re-record the opening with stronger vocal energy, cleaner mic pickup, and a more immediate hook."
+        return "Re-record this section with better mic positioning, clearer emphasis, and tighter delivery."
+
+    if primary_cause == "visual":
+        if start_sec <= 3:
+            return "Reshoot the opening with stronger visual motion, tighter framing, or a more eye-catching first shot."
+        return "Reshoot this segment with stronger B-roll, clearer framing changes, or more deliberate movement."
+
+    if start_sec <= 3:
+        return "Rewrite and re-record the opening line so the value is immediately clear and more curiosity-driven."
+    return "Rewrite and re-record this section with cleaner phrasing, fewer filler words, and a stronger message."
+
+def generate_strategic_fix(primary_cause: str, start_sec: int, end_sec: int):
+    if start_sec <= 3:
+        return "Design the first two seconds as a pattern interrupt so viewers instantly understand why they should keep watching."
+
+    if primary_cause == "audio":
+        return "Build stronger vocal rhythm into important moments so your delivery stays dynamic across the full video."
+
+    if primary_cause == "visual":
+        return "Plan a visual change every 3–4 seconds so the screen never stays static for too long."
+
+    return "Script tighter hooks, transitions, and payoff lines so every sentence clearly earns attention."
+
+def generate_fallback_diagnosis(primary_cause: str, severity: str):
+    if primary_cause == "audio":
+        if severity == "critical":
+            return "The spoken delivery drops too much here, so the moment feels low-energy and easier to skip."
+        return "The spoken delivery loses impact here, so the moment feels less energetic than the stronger parts of the video."
+
+    if primary_cause == "visual":
+        if severity == "critical":
+            return "This section becomes visually flat, so the screen stops giving viewers enough new stimulus."
+        return "The screen becomes visually less dynamic here, which makes this segment feel flatter than the stronger moments."
+
+    if severity == "critical":
+        return "The wording loses clarity here, so the message becomes harder to follow and less compelling."
+    return "The wording weakens here, so the message feels less sharp and less memorable than the strongest parts of the video."
+
 def generate_recommendations(drop_zones: list) -> dict:
     if not drop_zones:
         return {
             "zones": [],
-            "overallVerdict": "No significant drop zones detected. Good engagement throughout."
+            "overallVerdict": "No significant attention dips were detected. The video holds attention consistently."
         }
 
     zone_summaries = []
     for z in drop_zones:
         zone_summaries.append({
-            "timestamp":    z["timestamp"],
-            "severity":     z["severity"],
+            "timestamp": z["timestamp"],
+            "severity": z["severity"],
             "primaryCause": z["primaryCause"],
-            "avgScore":     z["avgScore"],
-            "audioScore":   z["signals"][0]["score"],
-            "visualScore":  z["signals"][1]["score"],
-            "nlpScore":     z["signals"][2]["score"],
+            "avgScore": z["avgScore"],
+            "startSeconds": z.get("startSeconds", 0),
+            "end": z.get("end", z.get("startSeconds", 0)),
+            "audioScore": z["signals"][0]["score"],
+            "visualScore": z["signals"][1]["score"],
+            "nlpScore": z["signals"][2]["score"],
         })
-
-    full_prompt = f"""{SYSTEM_PROMPT}
-
-Here are the engagement drop zones detected in the video:
-
-{json.dumps(zone_summaries, indent=2)}
-
-Generate editor-voice recommendations for each zone."""
 
     if GEMINI_API_KEY:
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+            full_prompt = f"""{SYSTEM_PROMPT}
 
+Here are the attention zones detected in the video:
+
+{json.dumps(zone_summaries, indent=2)}
+
+Generate editor-style recommendations for each zone.
+Remember:
+- quickFixes must contain 5 to 6 short bullet-style actions
+- they must vary by primary cause
+- keep the output clean JSON only
+"""
+
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
             payload = {
                 "contents": [{"parts": [{"text": full_prompt}]}],
                 "generationConfig": {
-                    "temperature": 0.7,
-                    "maxOutputTokens": 1500,
+                    "temperature": 0.8,
+                    "maxOutputTokens": 1800,
                 }
             }
 
@@ -179,7 +189,6 @@ Generate editor-voice recommendations for each zone."""
                 data = resp.json()
                 raw = data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-                # Strip markdown fences if present
                 if "```" in raw:
                     parts = raw.split("```")
                     for part in parts:
@@ -190,8 +199,37 @@ Generate editor-voice recommendations for each zone."""
                             raw = part
                             break
 
-                recs = json.loads(raw.strip())
-                return recs
+                parsed = json.loads(raw.strip())
+
+                # Safety cleanup so frontend always gets usable fields
+                cleaned_zones = []
+                for i, zone in enumerate(parsed.get("zones", [])):
+                    src = drop_zones[i] if i < len(drop_zones) else {}
+                    cause = zone.get("primaryCause") or src.get("primaryCause", "audio")
+                    start_sec = src.get("startSeconds", 0)
+                    end_sec = src.get("end", start_sec)
+                    severity = src.get("severity", "mild")
+
+                    quick_fixes = zone.get("quickFixes")
+                    if not isinstance(quick_fixes, list) or len(quick_fixes) == 0:
+                        quick_fixes = generate_quick_fixes(cause, start_sec, end_sec, severity)
+
+                    cleaned_zones.append({
+                        "timestamp": zone.get("timestamp", src.get("timestamp", "")),
+                        "diagnosis": zone.get("diagnosis", generate_fallback_diagnosis(cause, severity)),
+                        "primaryCause": cause,
+                        "quickFixes": quick_fixes[:6],
+                        "mediumFix": zone.get("mediumFix", generate_medium_fix(cause, start_sec)),
+                        "strategicFix": zone.get("strategicFix", generate_strategic_fix(cause, start_sec, end_sec)),
+                    })
+
+                return {
+                    "zones": cleaned_zones,
+                    "overallVerdict": parsed.get(
+                        "overallVerdict",
+                        "A few attention dips were detected. Tightening the weaker moments should noticeably improve retention."
+                    ),
+                }
 
         except Exception as e:
             print(f"Gemini API error: {e} — using fallback")
@@ -200,52 +238,32 @@ Generate editor-voice recommendations for each zone."""
 
 
 def _fallback_recommendations(drop_zones: list) -> dict:
-    FALLBACKS = {
-        "audio": {
-            "diagnosis": "Your voice energy drops significantly here. The flat delivery signals to viewers that the content has paused.",
-            "quickFix": "Speed up this clip by 1.2x in your editor to raise the perceived energy.",
-            "mediumFix": "Re-record this segment with noticeably higher vocal energy and faster pace.",
-            "strategicFix": "Practice your key points out loud 3 times before recording to eliminate flat delivery zones.",
-        },
-        "visual": {
-            "diagnosis": "Nothing changes on screen for too long here. Viewers' brains register nothing new and start scrolling.",
-            "quickFix": "Add a zoom-in or text overlay at this point so something moves on screen.",
-            "mediumFix": "Reshoot with B-roll footage or add on-screen graphics during this section.",
-            "strategicFix": "Plan a visual change every 3 to 4 seconds in your next video.",
-        },
-        "nlp": {
-            "diagnosis": "Too many filler words and slow pace here make you sound uncertain.",
-            "quickFix": "Edit out the filler words and silence in post.",
-            "mediumFix": "Re-record this segment with a written script so every word is intentional.",
-            "strategicFix": "Record a practice run first and watch it back to catch filler patterns.",
-        },
-    }
-
     zones_out = []
+
     for z in drop_zones:
         cause = z.get("primaryCause", "audio")
-        fb = FALLBACKS.get(cause, FALLBACKS["audio"])
+        severity = z.get("severity", "mild")
+        start_sec = z.get("startSeconds", 0)
+        end_sec = z.get("end", start_sec)
+
         zones_out.append({
-            "timestamp":    z["timestamp"],
-            "diagnosis":    fb["diagnosis"],
+            "timestamp": z["timestamp"],
+            "diagnosis": generate_fallback_diagnosis(cause, severity),
             "primaryCause": cause,
-            "quickFix":     fb["quickFix"],
-            "mediumFix":    fb["mediumFix"],
-            "strategicFix": fb["strategicFix"],
+            "quickFixes": generate_quick_fixes(cause, start_sec, end_sec, severity),
+            "mediumFix": generate_medium_fix(cause, start_sec),
+            "strategicFix": generate_strategic_fix(cause, start_sec, end_sec),
         })
 
     return {
         "zones": zones_out,
-        "overallVerdict": "Multiple engagement issues detected. Focus on the critical zones first.",
+        "overallVerdict": "A few attention dips were detected. Tightening the weaker moments should noticeably improve retention.",
     }
 
 
-# ─────────────────────────────────────────────
-# VIRAL BASELINES
-# ─────────────────────────────────────────────
-
 def get_viral_baseline() -> list:
     import math
+
     baseline = []
     for t in range(120):
         score = (
@@ -256,3 +274,12 @@ def get_viral_baseline() -> list:
         score = min(0.95, max(0.55, score))
         baseline.append({"t": t, "score": round(score, 4)})
     return baseline
+
+
+def get_social_comparison(query: str) -> dict:
+    return {
+        "query": query,
+        "youtubeSummary": "Social comparison not active in this simplified mode.",
+        "youtubeItems": [],
+        "instagramSummary": "Instagram comparison is limited in demo mode.",
+    }
